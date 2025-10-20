@@ -162,7 +162,6 @@
         // 🔥 ДОБАВЛЕН TURN-СЕРВЕР ДЛЯ РАБОТЫ В РАЗНЫХ СЕТЯХ
         pc = new RTCPeerConnection({
           iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
             {
               urls: "turn:217.154.5.134:3478",
               username: "webrtc",
