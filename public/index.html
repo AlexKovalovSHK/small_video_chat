@@ -171,7 +171,7 @@
           ],
         });
 
-        pc.onicecandidate = (event) => {
+        /*pc.onicecandidate = (event) => {
           if (event.candidate && currentPeerId) {
             ws.send(
               JSON.stringify({
@@ -180,6 +180,25 @@
                 candidate: event.candidate,
               })
             );
+          }
+        };*/ arguments;
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log(
+              ">>> ЛОКАЛЬНЫЙ ICE-кандидат:",
+              event.candidate.candidate
+            );
+            if (currentPeerId) {
+              ws.send(
+                JSON.stringify({
+                  to: currentPeerId,
+                  type: "ice-candidate",
+                  candidate: event.candidate,
+                })
+              );
+            }
+          } else {
+            console.log(">>> Генерация ICE-кандидатов завершена");
           }
         };
 
