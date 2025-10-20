@@ -1,0 +1,194 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>WebRTC Video Call</title>
+    <style>
+      video {
+        width: 48%;
+        height: auto;
+        border: 1px solid #ccc;
+      }
+      #localVideo {
+        transform: scaleX(-1);
+      } /* зеркальное отображение камеры */
+    </style>
+  </head>
+  <body>
+    <h2>WebRTC Video Call (ID: <span id="myId">?</span>)</h2>
+    <p>
+      Откройте эту страницу в двух вкладках. Введите ID другой вкладки и нажмите
+      "Начать звонок".
+    </p>
+    <input id="peerId" placeholder="ID собеседника" />
+    <button onclick="startCall()">Начать звонок</button>
+    <button onclick="hangUp()">Завершить</button>
+    <button onclick="getMyId()">Get ID</button>
+    <button onclick="getLink()">Get link</button>
+
+    <div style="margin-top: 20px">
+      <video id="localVideo" autoplay muted playsinline></video>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    <script>
+      const ws = new WebSocket("ws://localhost:3010/ws");
+      let myId = null;
+      let peerId = null;
+      let pc = null;
+
+      const localVideo = document.getElementById("localVideo");
+      const remoteVideo = document.getElementById("remoteVideo");
+      const myIdEl = document.getElementById("myId");
+
+      // Получаем медиапоток
+      async function getLocalStream() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+          localVideo.srcObject = stream;
+          return stream;
+        } catch (e) {
+          console.error("Камера/микрофон недоступны", e);
+          alert("Разрешите доступ к камере и микрофону!");
+        }
+      }
+
+      function createPeerConnection() {
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            ws.send(
+              JSON.stringify({
+                to: peerId,
+                type: "ice-candidate",
+                candidate: event.candidate,
+              })
+            );
+          }
+        };
+
+        pc.ontrack = (event) => {
+          remoteVideo.srcObject = event.streams[0];
+        };
+      }
+
+      async function startCall() {
+        peerId = document.getElementById("peerId").value.trim();
+        if (!peerId) return alert("Введите ID собеседника!");
+        if (!myId) return alert("Ожидайте получения вашего ID от сервера...");
+
+        const stream = await getLocalStream();
+        if (!stream) return;
+
+        createPeerConnection();
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        ws.send(
+          JSON.stringify({
+            to: peerId,
+            type: "offer",
+            sdp: offer,
+          })
+        );
+      }
+
+      async function handleOffer(offer) {
+        peerId = offer.from;
+        const stream = await getLocalStream();
+        if (!stream) return;
+
+        createPeerConnection();
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        ws.send(
+          JSON.stringify({
+            to: offer.from,
+            type: "answer",
+            sdp: answer,
+          })
+        );
+      }
+
+      // 🔥 КЛЮЧЕВОЙ БЛОК: обработка входящих сообщений
+      ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+
+        // 1. Получили свой ID от сервера
+        if (msg.yourId) {
+          myId = msg.yourId;
+          myIdEl.textContent = myId;
+          console.log("Мой ID:", myId);
+          return;
+        }
+
+        // 2. Получили offer
+        if (msg.type === "offer") {
+          await handleOffer(msg);
+          return;
+        }
+
+        // 3. Получили answer
+        if (msg.type === "answer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg));
+          return;
+        }
+
+        // 4. ICE-кандидат
+        if (msg.type === "ice-candidate") {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch (e) {
+            console.error("Ошибка ICE:", e);
+          }
+        }
+      };
+
+      function hangUp() {
+        if (pc) {
+          pc.close();
+          pc = null;
+        }
+        remoteVideo.srcObject = null;
+      }
+
+      function getMyId() {
+        if (myId) {
+          alert("Мой ID: " + myId);
+        } else {
+          alert("ID ещё не получен. Подождите немного или обновите страницу.");
+        }
+      }
+
+      function getLink() {
+        if (!myId) {
+          return alert("Сначала дождитесь получения вашего ID!");
+        }
+        const url = new URL(window.location);
+        url.searchParams.set("join", myId);
+        const link = url.toString();
+
+        // Копируем в буфер + показываем
+        navigator.clipboard
+          .writeText(link)
+          .then(() => alert("Ссылка для приглашения скопирована:\n" + link))
+          .catch(() => alert("Ссылка:\n" + link));
+      }
+
+      ws.onopen = () => console.log("✅ WebSocket подключён");
+    </script>
+  </body>
+</html>
