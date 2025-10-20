@@ -7,4 +7,5 @@ services:
     ports:
       - "3010:3010"
     restart: unless-stopped
-
+    env_file:             # <-- Добавьте эту секцию
+      - ./.env  
