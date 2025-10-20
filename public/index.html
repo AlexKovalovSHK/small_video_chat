@@ -164,10 +164,7 @@
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             {
-              urls: [
-                "turn:webrtc-bun.shk.solutions:3478",
-                "turn:webrtc-bun.shk.solutions:5349?transport=tcp",
-              ],
+              urls: "turn:webrtc-bun.shk.solutions:3478", // ← только UDP, без ?transport=tcp
               username: "webrtc",
               credential: "SuperSecurePass123!",
             },
