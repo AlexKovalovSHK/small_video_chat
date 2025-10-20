@@ -1,5 +1,7 @@
 # server_bun
 
+START -> bun run server.ts 
+
 To install dependencies:
 
 ```bash

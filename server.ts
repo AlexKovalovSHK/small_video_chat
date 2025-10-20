@@ -71,7 +71,7 @@ Bun.serve<ClientData>({
       const upgraded = server.upgrade(req, {
         data: { id: "" },
       });
-      if (upgraded) return new Response(); // ✅ Исправлено!
+      if (upgraded) return new Response();
     }
 
     if (url.pathname.startsWith("/public/")) {
