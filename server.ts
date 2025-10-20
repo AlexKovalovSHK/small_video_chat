@@ -5,6 +5,28 @@ type ClientData = {
   id: string;
 };
 
+if (!process.env.NODE_ENV) {
+  try {
+    const dotenv = Bun.file(".env");
+    if (await dotenv.exists()) {
+      const text = await dotenv.text();
+      for (const line of text.split("\n")) {
+        const [key, ...value] = line.trim().split("=");
+        if (key && !key.startsWith("#") && value !== undefined) {
+          const val = value.join("=");
+          process.env[key] = val;
+          Bun.env[key] = val;
+        }
+      }
+    }
+  } catch (e) {
+    // игнорируем, если .env нет
+  }
+}
+
+const isDev = process.env.NODE_ENV === "dev";
+const port = Number(process.env.PORT) || 3010;
+
 const clients = new Map<string, ServerWebSocket<ClientData>>();
 
 Bun.serve<ClientData>({

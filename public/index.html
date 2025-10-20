@@ -33,7 +33,14 @@
     </div>
 
     <script>
-      const ws = new WebSocket("ws://localhost:3010/ws");
+      // Определяем режим по протоколу страницы
+      const isLocalDev =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+
+      const wsProtocol = isLocalDev ? "ws" : "wss";
+      const ws = new WebSocket(`${wsProtocol}://${window.location.host}/ws`);
+
       let myId = null;
       let peerId = null;
       let pc = null;
