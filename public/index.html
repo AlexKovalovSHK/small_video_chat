@@ -79,7 +79,14 @@
     </div>
     <div id="statusMessage">Ожидание...</div>
 
-    <div style="margin-top: 20px; display: flex; justify-content: center; flex-wrap: wrap;">
+    <div
+      style="
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+      "
+    >
       <video id="localVideo" autoplay muted playsinline></video>
       <video id="remoteVideo" autoplay playsinline></video>
     </div>
@@ -102,7 +109,7 @@
 
       function updateStatus(message, isError = false) {
         statusMessageEl.textContent = message;
-        statusMessageEl.style.color = isError ? 'red' : '#555';
+        statusMessageEl.style.color = isError ? "red" : "#555";
       }
 
       function resetCallState() {
@@ -135,7 +142,10 @@
           return stream;
         } catch (e) {
           console.error("Камера/микрофон недоступны", e);
-          updateStatus("❌ Камера/микрофон недоступны. Разрешите доступ!", true);
+          updateStatus(
+            "❌ Камера/микрофон недоступны. Разрешите доступ!",
+            true
+          );
           alert("Разрешите доступ к камере и микрофону!");
           return null;
         }
@@ -143,7 +153,9 @@
 
       function createPeerConnection() {
         if (pc) {
-          console.log("Закрываем предыдущее PeerConnection перед созданием нового.");
+          console.log(
+            "Закрываем предыдущее PeerConnection перед созданием нового."
+          );
           pc.close();
         }
 
@@ -152,11 +164,14 @@
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             {
-              urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+              urls: [
+                "turn:webrtc-bun.shk.solutions:3478",
+                "turn:webrtc-bun.shk.solutions:5349?transport=tcp",
+              ],
               username: "webrtc",
-              credential: "webrtc"
-            }
-          ]
+              credential: "SuperSecurePass123!", // ← тот же пароль, что в docker-compose.yml
+            },
+          ],
         });
 
         pc.onicecandidate = (event) => {
@@ -173,7 +188,11 @@
 
         pc.ontrack = (event) => {
           console.log("Получен удаленный трек:", event.track, event.streams);
-          if (event.streams && event.streams[0] && remoteVideo.srcObject !== event.streams[0]) {
+          if (
+            event.streams &&
+            event.streams[0] &&
+            remoteVideo.srcObject !== event.streams[0]
+          ) {
             remoteVideo.srcObject = event.streams[0];
             updateStatus("Удаленный видеопоток получен!");
           }
@@ -182,9 +201,14 @@
         pc.onconnectionstatechange = () => {
           console.log("Состояние соединения WebRTC:", pc.connectionState);
           updateStatus(`Состояние звонка: ${pc.connectionState}`);
-          if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+          if (
+            ["disconnected", "failed", "closed"].includes(pc.connectionState)
+          ) {
             console.log("Соединение разорвано или не удалось.");
-            updateStatus("Звонок завершен или не удалось установить соединение.", true);
+            updateStatus(
+              "Звонок завершен или не удалось установить соединение.",
+              true
+            );
             hangUp();
           }
         };
@@ -198,13 +222,18 @@
       async function startCall() {
         const targetPeerId = peerIdInput.value.trim();
         if (!targetPeerId) return updateStatus("Введите ID собеседника!", true);
-        if (!myId) return updateStatus("Ожидайте получения вашего ID от сервера...", true);
-        if (targetPeerId === myId) return updateStatus("Нельзя звонить самому себе!", true);
+        if (!myId)
+          return updateStatus(
+            "Ожидайте получения вашего ID от сервера...",
+            true
+          );
+        if (targetPeerId === myId)
+          return updateStatus("Нельзя звонить самому себе!", true);
 
         if (pc && pc.connectionState !== "closed") {
           hangUp();
         }
-        
+
         currentPeerId = targetPeerId;
         updateStatus(`Начинаем звонок к ${currentPeerId}...`);
 
@@ -260,7 +289,10 @@
           );
           updateStatus("Отправлен ответ на звонок (answer).");
         } catch (error) {
-          console.error("Ошибка при обработке offer или отправке answer:", error);
+          console.error(
+            "Ошибка при обработке offer или отправке answer:",
+            error
+          );
           updateStatus("Ошибка при ответе на звонок.", true);
         }
       }
@@ -278,17 +310,25 @@
           const joinId = urlParams.get("join");
           if (joinId && joinId !== myId) {
             peerIdInput.value = joinId;
-            updateStatus(`ID собеседника "${joinId}" автоматически заполнен из ссылки.`);
+            updateStatus(
+              `ID собеседника "${joinId}" автоматически заполнен из ссылки.`
+            );
           }
           return;
         }
 
         if (!pc && msg.type !== "offer") {
-          console.warn("Получено сообщение до инициализации PeerConnection:", msg);
-          updateStatus("Получено сообщение, но звонок еще не инициирован.", true);
+          console.warn(
+            "Получено сообщение до инициализации PeerConnection:",
+            msg
+          );
+          updateStatus(
+            "Получено сообщение, но звонок еще не инициирован.",
+            true
+          );
           return;
         }
-        
+
         if (msg.type === "offer") {
           await handleOffer(msg);
           return;
@@ -297,7 +337,9 @@
         if (msg.type === "answer") {
           console.log("Получен answer:", msg);
           await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          updateStatus("Получен ответ на звонок (answer). Устанавливаем соединение...");
+          updateStatus(
+            "Получен ответ на звонок (answer). Устанавливаем соединение..."
+          );
           return;
         }
 
@@ -316,7 +358,7 @@
           telegramStatusEl.textContent = msg.success
             ? "✅ Telegram ID успешно привязан!"
             : "❌ Ошибка при привязке Telegram ID.";
-          telegramStatusEl.style.color = msg.success ? 'green' : 'red';
+          telegramStatusEl.style.color = msg.success ? "green" : "red";
           return;
         }
 
@@ -359,14 +401,16 @@
           return;
         }
 
-        const telegramUserId = prompt("Введите ваш Telegram User ID (можно получить через @userinfobot или /mytelegramid у бота):");
+        const telegramUserId = prompt(
+          "Введите ваш Telegram User ID (можно получить через @userinfobot или /mytelegramid у бота):"
+        );
         if (!telegramUserId || isNaN(Number(telegramUserId))) {
           alert("Некорректный Telegram User ID.");
           return;
         }
-        
+
         telegramStatusEl.textContent = "Регистрация Telegram ID...";
-        telegramStatusEl.style.color = '#555';
+        telegramStatusEl.style.color = "#555";
 
         ws.send(
           JSON.stringify({
