@@ -39,15 +39,15 @@
       video {
         width: 48%;
         height: auto;
-        max-width: 640px; /* Ограничим размер видео */
+        max-width: 640px;
         border: 2px solid #007bff;
-        background-color: #333; /* Для лучшей видимости пустых видеопотоков */
+        background-color: #333;
         margin: 10px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         border-radius: 8px;
       }
       #localVideo {
-        transform: scaleX(-1); /* зеркальное отображение камеры */
+        transform: scaleX(-1);
       }
       #statusMessage {
         margin-top: 15px;
@@ -85,7 +85,6 @@
     </div>
 
     <script>
-      // Определяем протокол для WebSocket
       const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${wsProtocol}://${window.location.host}/ws`);
 
@@ -123,7 +122,7 @@
       }
 
       async function getLocalStream() {
-        if (localStream) return localStream; // Возвращаем существующий поток, если уже есть
+        if (localStream) return localStream;
         try {
           updateStatus("Запрашиваем доступ к камере и микрофону...");
           const stream = await navigator.mediaDevices.getUserMedia({
@@ -131,7 +130,7 @@
             audio: true,
           });
           localVideo.srcObject = stream;
-          localStream = stream; // Сохраняем поток
+          localStream = stream;
           updateStatus("Доступ получен. Моя камера активна.");
           return stream;
         } catch (e) {
@@ -148,8 +147,16 @@
           pc.close();
         }
 
+        // 🔥 ДОБАВЛЕН TURN-СЕРВЕР ДЛЯ РАБОТЫ В РАЗНЫХ СЕТЯХ
         pc = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }], // Можно добавить TURN
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            {
+              urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+              username: "webrtc",
+              credential: "webrtc"
+            }
+          ]
         });
 
         pc.onicecandidate = (event) => {
@@ -166,7 +173,7 @@
 
         pc.ontrack = (event) => {
           console.log("Получен удаленный трек:", event.track, event.streams);
-          if (remoteVideo.srcObject !== event.streams[0]) {
+          if (event.streams && event.streams[0] && remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             updateStatus("Удаленный видеопоток получен!");
           }
@@ -175,8 +182,8 @@
         pc.onconnectionstatechange = () => {
           console.log("Состояние соединения WebRTC:", pc.connectionState);
           updateStatus(`Состояние звонка: ${pc.connectionState}`);
-          if (pc.connectionState === "disconnected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
-            console.log("Соединение разорвано или не удалось. Развешиваем трубку.");
+          if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+            console.log("Соединение разорвано или не удалось.");
             updateStatus("Звонок завершен или не удалось установить соединение.", true);
             hangUp();
           }
@@ -195,8 +202,7 @@
         if (targetPeerId === myId) return updateStatus("Нельзя звонить самому себе!", true);
 
         if (pc && pc.connectionState !== "closed") {
-          console.warn("Активный звонок обнаружен, завершаем перед началом нового.");
-          hangUp(); // Сбрасываем текущий звонок перед началом нового
+          hangUp();
         }
         
         currentPeerId = targetPeerId;
@@ -211,8 +217,6 @@
         try {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-
-          console.log("Отправляем offer к:", currentPeerId, offer);
           ws.send(
             JSON.stringify({
               to: currentPeerId,
@@ -230,8 +234,7 @@
       async function handleOffer(msg) {
         console.log("Получен offer:", msg);
         if (pc && pc.connectionState !== "closed") {
-          console.warn("Активный звонок обнаружен, завершаем перед обработкой нового offer.");
-          hangUp(); // Сбрасываем текущий звонок перед обработкой нового offer
+          hangUp();
         }
 
         currentPeerId = msg.from;
@@ -248,8 +251,6 @@
           await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-
-          console.log("Отправляем answer к:", msg.from, answer);
           ws.send(
             JSON.stringify({
               to: msg.from,
@@ -266,7 +267,6 @@
 
       ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
-        // console.log("Получено сообщение по WS:", msg); // Дебаг
 
         if (msg.yourId) {
           myId = msg.yourId;
@@ -274,23 +274,19 @@
           console.log("Мой ID:", myId);
           updateStatus(`Ваш ID: ${myId}.`);
 
-          // Проверяем URL на параметр 'join'
           const urlParams = new URLSearchParams(window.location.search);
           const joinId = urlParams.get("join");
           if (joinId && joinId !== myId) {
             peerIdInput.value = joinId;
             updateStatus(`ID собеседника "${joinId}" автоматически заполнен из ссылки.`);
-            // Если хочется автоматически начинать звонок при переходе по ссылке:
-            // startCall(); 
           }
           return;
         }
 
-        // Убеждаемся, что pc инициализирован для обработки offer/answer/ice-candidate
         if (!pc && msg.type !== "offer") {
-            console.warn("Получено сообщение до инициализации PeerConnection:", msg);
-            updateStatus("Получено сообщение, но звонок еще не инициирован.", true);
-            return;
+          console.warn("Получено сообщение до инициализации PeerConnection:", msg);
+          updateStatus("Получено сообщение, но звонок еще не инициирован.", true);
+          return;
         }
         
         if (msg.type === "offer") {
@@ -316,22 +312,17 @@
           }
         }
 
-        // НОВОЕ: Обработка ответа о регистрации Telegram ID
         if (msg.type === "telegramIdRegistered") {
-          if (msg.success) {
-            telegramStatusEl.textContent = "✅ Telegram ID успешно привязан!";
-            telegramStatusEl.style.color = 'green';
-          } else {
-            telegramStatusEl.textContent = "❌ Ошибка при привязке Telegram ID.";
-            telegramStatusEl.style.color = 'red';
-          }
+          telegramStatusEl.textContent = msg.success
+            ? "✅ Telegram ID успешно привязан!"
+            : "❌ Ошибка при привязке Telegram ID.";
+          telegramStatusEl.style.color = msg.success ? 'green' : 'red';
           return;
         }
 
-        // Обработка общих ошибок от сервера
         if (msg.type === "error" && msg.message) {
-            console.error("Ошибка от сервера:", msg.message);
-            updateStatus(`Ошибка от сервера: ${msg.message}`, true);
+          console.error("Ошибка от сервера:", msg.message);
+          updateStatus(`Ошибка от сервера: ${msg.message}`, true);
         }
       };
 
@@ -377,11 +368,10 @@
         telegramStatusEl.textContent = "Регистрация Telegram ID...";
         telegramStatusEl.style.color = '#555';
 
-        // Отправляем сообщение на сервер для привязки Telegram ID к WebRTC ID
         ws.send(
           JSON.stringify({
             type: "registerTelegramId",
-            telegramUserId: Number(telegramUserId), // Важно: отправляем число
+            telegramUserId: Number(telegramUserId),
           })
         );
       }
@@ -400,7 +390,6 @@
         updateStatus("Ошибка WebSocket. Проверьте соединение.", true);
       };
 
-      // Добавим обработку параметра 'join' при загрузке страницы
       window.onload = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const joinId = urlParams.get("join");
