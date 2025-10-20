@@ -1,0 +1,10 @@
+# docker-compose.yml
+services:
+  webrtc-bun:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webrtc_bun
+    ports:
+      - "3010:3010"
+    restart: unless-stopped

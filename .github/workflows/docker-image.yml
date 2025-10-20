@@ -1,18 +1,89 @@
-name: Docker Image CI
+name: Bun CI/CD with Docker Build and Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+env:
+  DOCKER_IMAGE: "webrtc-bun"
+  DEPLOY_DIR: "/root/webrtc-bun/"
+  CONTAINER_NAME: "webrtc_bun"
+  HOST_PORT: "3010"
+  CONTAINER_PORT: "3010"
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      - uses: actions/checkout@v4
+
+      - name: List files
+        run: ls -la
+
+      # Установка Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Сборка Docker-образа
+      - name: Build Docker image
+        run: |
+          docker build -t $DOCKER_IMAGE .
+          docker images
+
+      # Сохранение образа в tar
+      - name: Save Docker image
+        run: |
+          docker save $DOCKER_IMAGE -o $DOCKER_IMAGE.tar
+          ls -lh
+
+      # Установка sshpass
+      - name: Install sshpass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      # Копирование на сервер
+      - name: Copy files to remote server
+        run: |
+          sshpass -p "${{ secrets.SUDO_PASSWORD }}" scp -o StrictHostKeyChecking=no $DOCKER_IMAGE.tar ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:$DEPLOY_DIR
+          sshpass -p "${{ secrets.SUDO_PASSWORD }}" scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:$DEPLOY_DIR
+
+  deploy-to-server:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Install sshpass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: Create deploy directory
+        run: |
+          sshpass -p "${{ secrets.SUDO_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            mkdir -p $DEPLOY_DIR &&
+            chmod 755 $DEPLOY_DIR
+          "
+
+      - name: Verify files on server
+        run: |
+          sshpass -p "${{ secrets.SUDO_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            if [ ! -f '$DEPLOY_DIR/$DOCKER_IMAGE.tar' ]; then
+              echo '❌ Docker image not found!'
+              exit 1
+            fi
+            if [ ! -f '$DEPLOY_DIR/docker-compose.yml' ]; then
+              echo '❌ docker-compose.yml not found!'
+              exit 1
+            fi
+          "
+
+      - name: Deploy on remote server
+        run: |
+          sshpass -p "${{ secrets.SUDO_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            cd $DEPLOY_DIR &&
+            docker load -i $DOCKER_IMAGE.tar &&
+            docker-compose down &&
+            docker-compose up -d
+          "
