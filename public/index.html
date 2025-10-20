@@ -63,14 +63,24 @@
   <body>
     <h2>WebRTC Video Call (ID: <span id="myId">?</span>)</h2>
     <div>
-      <input id="peerIdInput" placeholder="ID собеседника" />
-      <button onclick="startCall()">Начать звонок</button>
-      <button onclick="hangUp()">Завершить</button>
+      <div>
+        <input id="peerIdInput" placeholder="ID собеседника" />
+      </div>
+      <div>
+        <button onclick="startCall()">Начать звонок</button>
+      </div>
+      <div>
+        <button onclick="hangUp()">Завершить</button>
+      </div>
     </div>
     <div>
-      <button onclick="getMyId()">Показать мой ID</button>
-      <button onclick="getLink()">Получить ссылку-приглашение</button>
-      <button onclick="registerTelegramId()">Привязать Telegram ID</button>
+      <div>
+        <button onclick="getLink()">Получить ссылку-приглашение</button>
+      </div>
+      <div>
+        <button onclick="registerTelegramId()">Привязать Telegram ID</button>
+      </div>
+
       <span id="telegramStatus"></span>
     </div>
     <div id="statusMessage">Ожидание...</div>
