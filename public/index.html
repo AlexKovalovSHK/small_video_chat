@@ -37,7 +37,8 @@
         window.location.hostname === "localhost" ||
         window.location.hostname === "127.0.0.1";
 
-      const wsProtocol = isLocalDev ? "ws" : "wss";
+      // НОВАЯ ЛОГИКА: Всегда используем wss, если страница загружена по https
+      const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${wsProtocol}://${window.location.host}/ws`);
 
       let myId = null;
