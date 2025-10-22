@@ -28,7 +28,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
 # Expose the application's port (change if needed)
-EXPOSE 5008
+EXPOSE 3010
 
 # Start the application
 #CMD ["node", "dist/main"]
