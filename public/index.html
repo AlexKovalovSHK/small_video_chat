@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>WebRTC Video Call</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="/socket.io/socket.io.js"></script>
     <style>
       body {
@@ -10,31 +11,83 @@
         text-align: center;
         background-color: #f4f4f4;
         color: #333;
+        margin: 0;
+        padding: 10px;
       }
-      video {
-        width: 45%;
-        border: 2px solid #007bff;
-        border-radius: 8px;
-        margin: 10px;
-        background-color: #000;
+
+      h2 {
+        font-size: 1.5em;
       }
-      button {
+
+      input, button {
         padding: 10px;
         margin: 5px;
+        font-size: 1em;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+      }
+
+      button {
         border: none;
         background-color: #007bff;
         color: white;
-        border-radius: 5px;
         cursor: pointer;
       }
+
       button:hover {
         background-color: #0056b3;
+      }
+
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: 10px;
+      }
+
+      #statusMessage {
+        margin: 10px 0;
+        font-size: 1em;
+      }
+
+      #videos {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      video {
+        width: 45%;
+        max-width: 300px;
+        height: auto;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        margin: 5px;
+        background-color: #000;
+      }
+
+      @media (max-width: 600px) {
+        video {
+          width: 90%;
+          max-width: 100%;
+        }
+
+        input, button {
+          width: 90%;
+          font-size: 1.1em;
+        }
+
+        #controls {
+          flex-direction: column;
+          align-items: center;
+        }
       }
     </style>
   </head>
   <body>
     <h2>WebRTC Video Call (ID: <span id="myId">?</span>)</h2>
-    <div>
+
+    <div id="controls">
       <input id="peerIdInput" placeholder="ID собеседника" />
       <button onclick="startCall()">Позвонить</button>
       <button onclick="hangUp()">Завершить</button>
@@ -43,7 +96,7 @@
 
     <p id="statusMessage">Ожидание...</p>
 
-    <div>
+    <div id="videos">
       <video id="localVideo" autoplay muted playsinline></video>
       <video id="remoteVideo" autoplay playsinline></video>
     </div>
@@ -165,7 +218,6 @@
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
         remoteDescriptionSet = true;
 
-        // добавляем все отложенные кандидаты
         for (const c of pendingCandidates) {
           try { await pc.addIceCandidate(new RTCIceCandidate(c)); }
           catch(e){ console.warn("Ошибка добавления ICE:", e); }
