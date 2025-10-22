@@ -26,6 +26,7 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
+COPY public ./public
 
 # Expose the application's port (change if needed)
 EXPOSE 3010

@@ -4,7 +4,7 @@ import { AppService } from './app.service';
 import { SocketModule } from './socket/socket.module';
 
 @Module({
-  imports: [SocketModule], // Добавляем SocketModule в импорты
+  imports: [SocketModule], 
   controllers: [AppController],
   providers: [AppService],
 })
