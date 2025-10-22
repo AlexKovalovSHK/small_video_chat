@@ -30,6 +30,12 @@
       button:hover {
         background-color: #0056b3;
       }
+      input {
+        padding: 8px;
+        margin: 5px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+      }
     </style>
   </head>
   <body>
@@ -54,6 +60,7 @@
       let currentPeerId = null;
       let pc = null;
       let localStream = null;
+      const pendingCandidates = []; // очередь ICE-кандидатов, если pc еще не создан
 
       const localVideo = document.getElementById("localVideo");
       const remoteVideo = document.getElementById("remoteVideo");
@@ -80,6 +87,7 @@
       }
 
       function createPeerConnection() {
+        if (pc) pc.close(); // закрываем старое соединение
         pc = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
@@ -92,8 +100,9 @@
         });
 
         pc.onicecandidate = (event) => {
-          if (event.candidate && currentPeerId)
+          if (event.candidate && currentPeerId) {
             socket.emit("message", { to: currentPeerId, type: "ice-candidate", candidate: event.candidate });
+          }
         };
 
         pc.ontrack = (e) => {
@@ -104,6 +113,16 @@
         pc.onconnectionstatechange = () => {
           if (["failed", "disconnected", "closed"].includes(pc.connectionState)) hangUp();
         };
+
+        // после создания pc добавляем все отложенные ICE-кандидаты
+        pendingCandidates.forEach(async (c) => {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch (err) {
+            console.warn("Ошибка добавления отложенного ICE-кандидата:", err);
+          }
+        });
+        pendingCandidates.length = 0;
       }
 
       async function startCall() {
@@ -138,15 +157,31 @@
         await pc.setLocalDescription(answer);
         socket.emit("message", { to: msg.from, type: "answer", sdp: answer });
         setStatus("Ответ отправлен");
+
+        // все отложенные ICE-кандидаты будут автоматически добавлены внутри createPeerConnection()
       }
 
       socket.on("message", async (msg) => {
         if (msg.type === "offer") return handleOffer(msg);
         if (msg.type === "answer") {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          setStatus("Получен answer, соединяемся...");
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+            setStatus("Получен answer, соединяемся...");
+          } else {
+            console.warn("Answer получен до создания PeerConnection");
+          }
         }
-        if (msg.type === "ice-candidate") await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        if (msg.type === "ice-candidate") {
+          if (pc) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch (err) {
+              console.warn("Ошибка добавления ICE-кандидата:", err);
+            }
+          } else {
+            pendingCandidates.push(msg.candidate);
+          }
+        }
       });
 
       socket.on("yourId", (id) => {
@@ -162,6 +197,7 @@
         pc = null;
         currentPeerId = null;
         setStatus("Звонок завершён");
+        remoteVideo.srcObject = null;
       }
 
       function getLink() {
