@@ -1,7 +1,7 @@
 // server.ts
-import { Server } from 'socket.io';
-import type { DisconnectReason, Socket } from 'socket.io';
-import type { Server as BunServerType, WebSocketHandler } from "bun"; // Импортируем WebSocketHandler
+import { Server } from 'socket.io'; // Server - это класс/значение
+import type { DisconnectReason, Socket } from 'socket.io'; // Socket и DisconnectReason - только типы
+import type { Server as BunServerType } from "bun"; // ServeOptions больше не нужен
 import type { Server as HttpServerType } from 'http';
 
 const isDev = Bun.env.NODE_ENV === "dev";
@@ -12,11 +12,9 @@ let io: Server;
 const bunHttpServer = Bun.serve({
   hostname: "0.0.0.0",
   port: port,
-  websocket: {} as WebSocketHandler<undefined>,
   fetch: async (req: Request, server: BunServerType<undefined>): Promise<Response | undefined> => {
     const url = new URL(req.url);
 
-    // Логика для статических файлов
     if (url.pathname === "/favicon.ico") {
       return new Response(null, { status: 204 });
     }
@@ -37,13 +35,13 @@ const bunHttpServer = Bun.serve({
     }
 
     if (url.pathname.startsWith("/socket.io/")) {
-      return; // Позволяем Socket.IO обрабатывать свои пути
+      return;
     }
 
     console.log(`[HTTP] 404: ${url.pathname}`);
     return new Response("404 Not Found", { status: 404 });
   },
-});
+} as any); // <-- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: ПРИВЕДЕНИЕ ТИПА ВСЕГО ОБЪЕКТА К 'any'
 
 io = new Server(bunHttpServer as unknown as HttpServerType, {
     cors: {
