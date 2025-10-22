@@ -1,7 +1,7 @@
 // server.ts
 import { Server } from 'socket.io';
 import type { DisconnectReason, Socket } from 'socket.io';
-import type { Server as BunServerType, HeadersInit } from "bun";
+import type { Server as BunServerType } from "bun";
 
 // Используем эти типы для эмуляции Node.js Request/Response для Socket.IO
 import { Readable } from 'stream'; // Из Node.js, но Bun имеет свою реализацию
@@ -12,10 +12,8 @@ class MockIncomingMessage extends Readable {
   headers: Record<string, string | string[] | undefined> = {};
   method: string | undefined;
   url: string | undefined;
-  // Добавьте другие свойства, если Socket.IO их ожидает
-  // Например, connection, socket
-  connection: any; // Фиктивное свойство
-  socket: any; // Фиктивное свойство
+  connection: any;
+  socket: any;
 
   constructor(bunRequest: Request) {
     super();
@@ -23,24 +21,33 @@ class MockIncomingMessage extends Readable {
     const url = new URL(bunRequest.url);
     this.url = url.pathname + url.search;
     bunRequest.headers.forEach((value, key) => {
-      this.headers[key] = value;
+      const existing = this.headers[key.toLowerCase()];
+      if (existing) {
+        if (Array.isArray(existing)) {
+          existing.push(value);
+        } else {
+          this.headers[key.toLowerCase()] = [existing, value];
+        }
+      } else {
+        this.headers[key.toLowerCase()] = value;
+      }
     });
 
-    // Эмулируем тело запроса
     (async () => {
       if (bunRequest.body) {
-        // Прочитаем тело как ArrayBuffer и затем как Buffer
-        const arrayBuffer = await bunRequest.arrayBuffer();
-        this.push(Buffer.from(arrayBuffer));
+        try {
+            const arrayBuffer = await bunRequest.arrayBuffer();
+            this.push(Buffer.from(arrayBuffer));
+        } catch (e) {
+            console.error("Error reading request body:", e);
+        }
       }
-      this.push(null); // Сигнализируем об окончании потока
+      this.push(null);
     })();
 
-    // Фиктивные свойства для работы Socket.IO
-    this.connection = this; // Socket.IO может использовать connection/socket
+    this.connection = this;
     this.socket = this;
   }
-  // Переопределяем _read, если необходимо, но для push-модели можно оставить пустым
   override _read() {}
 }
 
@@ -50,16 +57,19 @@ class MockServerResponse extends EventEmitter {
   _headers: Record<string, string | string[] | undefined> = {};
   _body: Buffer[] = [];
   _ended = false;
+  _headersSent = false;
 
   constructor() {
     super();
   }
 
   writeHead(statusCode: number, headers?: Record<string, string | string[] | undefined>) {
+    if (this._headersSent) return;
     this.statusCode = statusCode;
     if (headers) {
       Object.assign(this._headers, headers);
     }
+    this._headersSent = true;
   }
 
   setHeader(name: string, value: string | string[] | undefined) {
@@ -79,22 +89,30 @@ class MockServerResponse extends EventEmitter {
   }
 
   write(chunk: string | Buffer) {
+    if (!this._headersSent) {
+      this._implicitHeader();
+    }
     this._body.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     return true;
   }
 
   end(chunk?: string | Buffer) {
+    if (this._ended) return this;
     if (chunk) {
       this.write(chunk);
     }
+    if (!this._headersSent) {
+        this._implicitHeader();
+    }
     this._ended = true;
-    this.emit('finish'); // Сигнализируем о завершении ответа
+    this.emit('finish');
     return this;
   }
 
-  // Socket.IO может ожидать эти методы
   _implicitHeader() {
-    // Делаем что-то, если Socket.IO пытается выставить неявные заголовки
+    if (!this._headersSent) {
+      this.writeHead(this.statusCode);
+    }
   }
 }
 
@@ -106,30 +124,38 @@ let io: Server;
 const bunHttpServer = Bun.serve({
   hostname: "0.0.0.0",
   port: port,
+  // --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ---
+  websocket: {
+    // Bun требует, чтобы этот объект существовал для поддержки WebSockets.
+    // Обработчики здесь минимальны, так как Socket.IO сам возьмет на себя
+    // управление WebSocket-соединением после server.upgrade(req).
+    open() { /* console.log("[Bun WS] Opened"); */ },
+    message() { /* console.log("[Bun WS] Message:", message); */ },
+    close() { /* console.log("[Bun WS] Closed:", code, message); */ },
+    error(error: any) { console.error("[Bun WS] Error:", error); },
+    // maxPayloadLength: 1024 * 1024, // Необязательно: максимальный размер сообщения
+    // idleTimeout: 20, // Необязательно: таймаут неактивности
+  },
   fetch: async (req: Request, server: BunServerType<undefined>): Promise<Response | undefined> => {
     const url = new URL(req.url);
 
     // --- Интеграция Socket.IO ---
     if (url.pathname.startsWith("/socket.io/")) {
       // 1. Попытка upgrade для WebSocket
-      if (server.upgrade(req)) {
-        // Если успешно апгрейднуто, Bun берет управление на себя для WebSocket.
-        // Здесь не нужно возвращать Response.
+      // Теперь это будет работать, так как объект `websocket` присутствует.
+      if (req.headers.get("upgrade") === "websocket" && server.upgrade(req)) {
         return;
       }
 
       // 2. Если это не upgrade (т.е. обычный HTTP-запрос для Socket.IO, например, polling)
-      // Эмулируем Node.js req/res для Socket.IO.engine.handleRequest
       const mockReq = new MockIncomingMessage(req);
       const mockRes = new MockServerResponse();
 
       // Запускаем обработчик Socket.IO
-      // @ts-ignore - Socket.IO может не знать о MockIncomingMessage/MockServerResponse
+      // @ts-ignore
       io.engine.handleRequest(mockReq, mockRes);
 
-      // Ждем, пока Socket.IO завершит запись в mockRes
       await new Promise<void>(resolve => {
-        // Если Socket.IO уже завершил ответ (редко, но бывает), завершим сразу
         if (mockRes._ended) {
           resolve();
         } else {
@@ -137,13 +163,12 @@ const bunHttpServer = Bun.serve({
         }
       });
 
-      // Собираем тело ответа
       const responseBody = Buffer.concat(mockRes._body);
 
       const bunHeaders = new Headers();
       for (const key in mockRes._headers) {
         const value = mockRes._headers[key];
-        if (value !== undefined) { // Игнорируем undefined заголовки
+        if (value !== undefined) {
           if (Array.isArray(value)) {
             value.forEach(v => bunHeaders.append(key, v));
           } else {
@@ -152,7 +177,6 @@ const bunHttpServer = Bun.serve({
         }
       }
 
-      // Создаем Bun Response из эмулированного Node.js ответа
       return new Response(responseBody, {
         status: mockRes.statusCode,
         headers: bunHeaders,
@@ -184,32 +208,7 @@ const bunHttpServer = Bun.serve({
   },
 } as any);
 
-// Socket.IO теперь должен быть инициализирован
-// В конструктор Socket.IO Server передается либо порт, либо HTTP-сервер Node.js.
-// Поскольку у нас Bun.serve, а не Node.js http.Server,
-// мы не можем просто передать `bunHttpServer` напрямую.
-// Самый простой способ обойти типизацию здесь, если мы уверены, что
-// Socket.IO >= 4.0.0 может работать с Bun.serve через `io.engine.handleRequest`
-// для HTTP-части и `server.upgrade` для WebSocket-части, это
-// создать Socket.IO сервер, который *не слушает сам* на HTTP-порту.
-// И затем использовать io.attach(bunHttpServer) - но это снова требует http.Server.
-
-// **По-настоящему, если Socket.IO v4+ и Bun, и нужен один порт:**
-// 1. Создайте `io = new Server();` (без аргументов). Это создает Socket.IO сервер
-//    без привязки к HTTP-серверу или порту.
-// 2. В `fetch` обработчике, вы уже перехватываете `/socket.io/` и
-//    обрабатываете его через `server.upgrade(req)` и `io.engine.handleRequest`.
-// 3. Socket.IO сам найдет свой путь к этим запросам.
-// 4. Ошибки типизации `No overload matches this call` не будет,
-//    потому что вы не передаете ничего, что вызывает конфликт.
-
-// --- Итоговое, ОЧЕНЬ УПРОЩЕННОЕ ИСПРАВЛЕНИЕ ---
-// Это удалит ошибку типизации и будет использовать Bun.serve как главный HTTP-сервер.
-io = new Server(); // Создаем экземпляр без привязки к HTTP-серверу
-
-// Оставьте остальной код как есть.
-// `io.engine.handleRequest` и `server.upgrade(req)` в `fetch`
-// теперь будут обрабатывать Socket.IO трафик.
+io = new Server();
 
 io.on('connection', (socket: Socket) => {
   const id = socket.id;
