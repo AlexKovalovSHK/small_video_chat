@@ -31,5 +31,4 @@ COPY package.json ./
 EXPOSE 3010
 
 # Start the application
-#CMD ["node", "dist/main"]
-CMD ["node", "dist/src/main.js"]
+CMD ["node", "dist/main"]
