@@ -7,91 +7,49 @@
     <style>
       body {
         font-family: Arial, sans-serif;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-top: 20px;
+        text-align: center;
         background-color: #f4f4f4;
         color: #333;
       }
-      h2 {
-        color: #007bff;
+      video {
+        width: 45%;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        margin: 10px;
+        background-color: #000;
       }
       button {
-        padding: 10px 15px;
+        padding: 10px;
         margin: 5px;
         border: none;
-        border-radius: 5px;
         background-color: #007bff;
         color: white;
+        border-radius: 5px;
         cursor: pointer;
-        font-size: 16px;
       }
       button:hover {
         background-color: #0056b3;
-      }
-      input {
-        padding: 8px;
-        margin: 5px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 16px;
-      }
-      video {
-        width: 48%;
-        height: auto;
-        max-width: 640px;
-        border: 2px solid #007bff;
-        background-color: #333;
-        margin: 10px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        border-radius: 8px;
-      }
-      #localVideo {
-        transform: scaleX(-1);
-      }
-      #statusMessage {
-        margin-top: 15px;
-        font-size: 1.1em;
-        color: #555;
       }
     </style>
   </head>
   <body>
     <h2>WebRTC Video Call (ID: <span id="myId">?</span>)</h2>
     <div>
-      <div>
-        <input id="peerIdInput" placeholder="ID собеседника" />
-      </div>
-      <div>
-        <button onclick="startCall()">Начать звонок</button>
-      </div>
-      <div>
-        <button onclick="hangUp()">Завершить</button>
-      </div>
+      <input id="peerIdInput" placeholder="ID собеседника" />
+      <button onclick="startCall()">Позвонить</button>
+      <button onclick="hangUp()">Завершить</button>
+      <button onclick="getLink()">Получить ссылку</button>
     </div>
-    
+
+    <p id="statusMessage">Ожидание...</p>
+
     <div>
-      <button onclick="getLink()">Получить ссылку-приглашение</button>
-    </div>
-
-    <div id="statusMessage">Ожидание...</div>
-
-    <div
-      style="
-        margin-top: 20px;
-        display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-      "
-    >
       <video id="localVideo" autoplay muted playsinline></video>
       <video id="remoteVideo" autoplay playsinline></video>
     </div>
 
     <script>
       const socket = io();
-
       let myId = null;
       let currentPeerId = null;
       let pc = null;
@@ -99,348 +57,120 @@
 
       const localVideo = document.getElementById("localVideo");
       const remoteVideo = document.getElementById("remoteVideo");
-      const myIdEl = document.getElementById("myId");
       const peerIdInput = document.getElementById("peerIdInput");
-      const statusMessageEl = document.getElementById("statusMessage");
-      // Удаляем telegramStatusEl
-      // const telegramStatusEl = document.getElementById("telegramStatus");
+      const myIdEl = document.getElementById("myId");
+      const statusEl = document.getElementById("statusMessage");
 
-      function updateStatus(message, isError = false) {
-        statusMessageEl.textContent = message;
-        statusMessageEl.style.color = isError ? "red" : "#555";
-      }
-
-      function resetCallState() {
-        if (pc) {
-          pc.close();
-          pc = null;
-          updateStatus("Звонок завершен. Соединение очищено.");
-        }
-        if (localStream) {
-          localStream.getTracks().forEach((track) => track.stop());
-          localStream = null;
-        }
-        localVideo.srcObject = null;
-        remoteVideo.srcObject = null;
-        currentPeerId = null;
-        peerIdInput.value = "";
+      function setStatus(msg, err = false) {
+        statusEl.textContent = msg;
+        statusEl.style.color = err ? "red" : "#333";
       }
 
       async function getLocalStream() {
         if (localStream) return localStream;
         try {
-          updateStatus("Запрашиваем доступ к камере и микрофону...");
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true,
-          });
-          localVideo.srcObject = stream;
-          localStream = stream;
-          updateStatus("Доступ получен. Моя камера активна.");
-          return stream;
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
+          return localStream;
         } catch (e) {
-          console.error("Камера/микрофон недоступны", e);
-          updateStatus(
-            "❌ Камера/микрофон недоступны. Разрешите доступ!",
-            true
-          );
-          alert("Разрешите доступ к камере и микрофону!");
+          setStatus("Ошибка доступа к камере/микрофону", true);
+          console.error(e);
           return null;
         }
       }
 
       function createPeerConnection() {
-        if (pc) {
-          console.log(
-            "Закрываем предыдущее PeerConnection перед созданием нового."
-          );
-          pc.close();
-        }
-
         pc = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
             {
               urls: "turn:217.154.5.134:3478",
               username: "webrtc",
               credential: "SuperSecurePass123",
             },
-            {
-              urls: "turn:217.154.5.134:3478?transport=tcp",
-              username: "webrtc",
-              credential: "SuperSecurePass123",
-            },
-            /* Если TURN поддерживает TLS на 443
-            {
-              urls: "turns:your.turn.server.com:443?transport=tcp",
-              username: "webrtc",
-              credential: "SuperSecurePass123",
-            },
-            */
           ],
         });
 
         pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log(
-              ">>> ЛОКАЛЬНЫЙ ICE-кандидат:",
-              event.candidate.candidate
-            );
-            if (currentPeerId) {
-              socket.emit("message", {
-                to: currentPeerId,
-                type: "ice-candidate",
-                candidate: event.candidate,
-              });
-            }
-          } else {
-            console.log(">>> Генерация ICE-кандидатов завершена");
-          }
+          if (event.candidate && currentPeerId)
+            socket.emit("message", { to: currentPeerId, type: "ice-candidate", candidate: event.candidate });
         };
 
-        pc.ontrack = (event) => {
-          console.log("Получен удаленный трек:", event.track, event.streams);
-          if (
-            event.streams &&
-            event.streams[0] &&
-            remoteVideo.srcObject !== event.streams[0]
-          ) {
-            remoteVideo.srcObject = event.streams[0];
-            updateStatus("Удаленный видеопоток получен!");
-          }
+        pc.ontrack = (e) => {
+          remoteVideo.srcObject = e.streams[0];
+          setStatus("Удалённый поток получен!");
         };
 
         pc.onconnectionstatechange = () => {
-          console.log("Состояние соединения WebRTC:", pc.connectionState);
-          updateStatus(`Состояние звонка: ${pc.connectionState}`);
-          if (
-            ["disconnected", "failed", "closed"].includes(pc.connectionState)
-          ) {
-            console.log("Соединение разорвано или не удалось.");
-            updateStatus(
-              "Звонок завершен или не удалось установить соединение.",
-              true
-            );
-            hangUp();
-          }
-        };
-
-        pc.oniceconnectionstatechange = () => {
-          console.log("Состояние ICE соединения:", pc.iceConnectionState);
-          updateStatus(`Состояние ICE: ${pc.iceConnectionState}`);
+          if (["failed", "disconnected", "closed"].includes(pc.connectionState)) hangUp();
         };
       }
 
       async function startCall() {
-        const targetPeerId = peerIdInput.value.trim();
-        if (!targetPeerId) return updateStatus("Введите ID собеседника!", true);
-        if (!myId)
-          return updateStatus(
-            "Ожидайте получения вашего ID от сервера...",
-            true
-          );
-        if (targetPeerId === myId)
-          return updateStatus("Нельзя звонить самому себе!", true);
-
-        if (pc && pc.connectionState !== "closed") {
-          hangUp();
-        }
-
-        currentPeerId = targetPeerId;
-        updateStatus(`Начинаем звонок к ${currentPeerId}...`);
+        const target = peerIdInput.value.trim();
+        if (!target) return setStatus("Введите ID собеседника", true);
+        if (target === myId) return setStatus("Нельзя звонить самому себе", true);
 
         const stream = await getLocalStream();
         if (!stream) return;
 
         createPeerConnection();
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          socket.emit("message", {
-            to: currentPeerId,
-            type: "offer",
-            sdp: offer,
-          });
-          updateStatus("Отправлен запрос на звонок (offer). Ожидаем ответа.");
-        } catch (error) {
-          console.error("Ошибка при создании или отправке offer:", error);
-          updateStatus("Ошибка при инициации звонка.", true);
-        }
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        currentPeerId = target;
+        socket.emit("message", { to: target, type: "offer", sdp: offer });
+        setStatus("Отправлен offer, ожидаем ответ...");
       }
 
       async function handleOffer(msg) {
-        console.log("Получен offer:", msg);
-        if (pc && pc.connectionState !== "closed") {
-          hangUp();
-        }
-
         currentPeerId = msg.from;
-        peerIdInput.value = currentPeerId;
-        updateStatus(`Получен звонок от ${currentPeerId}. Отвечаем...`);
-
         const stream = await getLocalStream();
         if (!stream) return;
 
         createPeerConnection();
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit("message", {
-            to: msg.from,
-            type: "answer",
-            sdp: answer,
-          });
-          updateStatus("Отправлен ответ на звонок (answer).");
-        } catch (error) {
-          console.error(
-            "Ошибка при обработке offer или отправке answer:",
-            error
-          );
-          updateStatus("Ошибка при ответе на звонок.", true);
-        }
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit("message", { to: msg.from, type: "answer", sdp: answer });
+        setStatus("Ответ отправлен");
       }
 
       socket.on("message", async (msg) => {
-        if (!pc && msg.type !== "offer") {
-          console.warn(
-            "Получено сообщение до инициализации PeerConnection:",
-            msg
-          );
-          updateStatus(
-            "Получено сообщение, но звонок еще не инициирован.",
-            true
-          );
-          return;
-        }
-
-        if (msg.type === "offer") {
-          await handleOffer(msg);
-          return;
-        }
-
+        if (msg.type === "offer") return handleOffer(msg);
         if (msg.type === "answer") {
-          console.log("Получен answer:", msg);
           await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          updateStatus(
-            "Получен ответ на звонок (answer). Устанавливаем соединение..."
-          );
-          return;
+          setStatus("Получен answer, соединяемся...");
         }
-
-        if (msg.type === "ice-candidate") {
-          console.log("Получен ICE-кандидат.");
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            updateStatus("Получен и добавлен ICE-кандидат.");
-          } catch (e) {
-            console.error("Ошибка при добавлении ICE-кандидата:", e);
-            updateStatus("Ошибка при обработке ICE-кандидата.", true);
-          }
-        }
+        if (msg.type === "ice-candidate") await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
       });
 
       socket.on("yourId", (id) => {
         myId = id;
-        myIdEl.textContent = myId;
-        console.log("Мой ID:", myId);
-        updateStatus(`Ваш ID: ${myId}.`);
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const joinId = urlParams.get("join");
-        if (joinId && joinId !== myId) {
-          peerIdInput.value = joinId;
-          updateStatus(
-            `ID собеседника "${joinId}" автоматически заполнен из ссылки.`
-          );
-        }
-      });
-
-      // Удаляем обработчики событий Telegram
-      // socket.on("telegramIdRegistered", ...);
-
-      socket.on("error", (msg) => {
-        console.error("Ошибка от сервера:", msg.message);
-        updateStatus(`Ошибка от сервера: ${msg.message}`, true);
+        myIdEl.textContent = id;
+        setStatus(`Ваш ID: ${id}`);
+        const join = new URLSearchParams(location.search).get("join");
+        if (join && join !== id) peerIdInput.value = join;
       });
 
       function hangUp() {
-        console.log("Завершение звонка.");
-        resetCallState();
-      }
-
-      function getMyId() {
-        if (myId) {
-          alert("Мой ID: " + myId);
-        } else {
-          alert("ID ещё не получен. Подождите немного или обновите страницу.");
-        }
+        if (pc) pc.close();
+        pc = null;
+        currentPeerId = null;
+        setStatus("Звонок завершён");
       }
 
       function getLink() {
-        if (!myId) {
-          return alert("Сначала дождитесь получения вашего ID!");
-        }
-        const url = new URL(window.location);
+        if (!myId) return alert("ID ещё не получен!");
+        const url = new URL(location);
         url.searchParams.set("join", myId);
-        const link = url.toString();
-
-        navigator.clipboard
-          .writeText(link)
-          .then(() => alert("Ссылка для приглашения скопирована:\n" + link))
-          .catch(() => alert("Ссылка:\n" + link));
+        navigator.clipboard.writeText(url.toString());
+        alert("Ссылка скопирована:\n" + url);
       }
-
-      // Удаляем функцию registerTelegramId
-      /*
-      async function registerTelegramId() {
-        if (!myId) {
-          alert("Сначала дождитесь получения вашего ID от сервера.");
-          return;
-        }
-        const telegramUserId = prompt("Введите ваш Telegram User ID (можно получить через @userinfobot или /mytelegramid у бота):");
-        if (!telegramUserId || isNaN(Number(telegramUserId))) {
-          alert("Некорректный Telegram User ID.");
-          return;
-        }
-        telegramStatusEl.textContent = "Регистрация Telegram ID...";
-        telegramStatusEl.style.color = "#555";
-        socket.emit("message", {
-          type: "registerTelegramId",
-          telegramUserId: Number(telegramUserId),
-        });
-      }
-      */
-
-      socket.on("connect", () => {
-        console.log("✅ Socket.IO подключён");
-        updateStatus("Socket.IO подключён. Ожидаем ваш ID...");
-      });
-
-      socket.on("disconnect", (reason) => {
-        console.log(`❌ Socket.IO отключён. Причина: ${reason}. Сбрасываем состояние звонка.`);
-        updateStatus(`Socket.IO отключён. Причина: ${reason}. Попробуйте обновить страницу.`, true);
-        hangUp();
-      });
-
-      socket.on("connect_error", (error) => {
-        console.error("🚫 Ошибка подключения Socket.IO:", error);
-        updateStatus("Ошибка Socket.IO. Проверьте соединение.", true);
-      });
-
-      window.onload = () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const joinId = urlParams.get("join");
-        if (joinId) {
-          peerIdInput.value = joinId;
-        }
-        updateStatus("Загрузка страницы. Ожидание Socket.IO соединения...");
-      };
     </script>
   </body>
 </html>
