@@ -1,260 +1,270 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>WebRTC Video Call</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        text-align: center;
-        background-color: #f4f4f4;
-        color: #333;
-        margin: 0;
-        padding: 10px;
-      }
-
-      h2 {
-        font-size: 1.5em;
-      }
-
-      input, button {
-        padding: 10px;
-        margin: 5px;
-        font-size: 1em;
-        border-radius: 5px;
-        border: 1px solid #ccc;
-      }
-
-      button {
-        border: none;
-        background-color: #007bff;
-        color: white;
-        cursor: pointer;
-      }
-
-      button:hover {
-        background-color: #0056b3;
-      }
-
-      #controls {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        margin-bottom: 10px;
-      }
-
-      #statusMessage {
-        margin: 10px 0;
-        font-size: 1em;
-      }
-
-      #videos {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-      }
-
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebRTC Video Call</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f4f4f4;
+      color: #333;
+      margin: 0;
+      padding: 0 10px;
+    }
+    h2 {
+      margin-top: 15px;
+      font-size: 1.2em;
+    }
+    #controls {
+      margin: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    input {
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      width: 150px;
+    }
+    button {
+      padding: 10px 15px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #statusMessage {
+      margin: 10px 0;
+      font-size: 1em;
+      color: #555;
+    }
+    #videos {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    video {
+      width: 45%;
+      max-width: 300px;
+      border: 2px solid #007bff;
+      border-radius: 8px;
+      background-color: black;
+    }
+    @media (max-width: 600px) {
       video {
-        width: 45%;
-        max-width: 300px;
-        height: auto;
-        border: 2px solid #007bff;
-        border-radius: 8px;
-        margin: 5px;
-        background-color: #000;
+        width: 90%;
       }
-
-      @media (max-width: 600px) {
-        video {
-          width: 90%;
-          max-width: 100%;
-        }
-
-        input, button {
-          width: 90%;
-          font-size: 1.1em;
-        }
-
-        #controls {
-          flex-direction: column;
-          align-items: center;
-        }
+      input {
+        width: 80%;
       }
-    </style>
-  </head>
-  <body>
-    <h2>WebRTC Video Call (ID: <span id="myId">?</span>)</h2>
+    }
+  </style>
+</head>
+<body>
+  <h2>Ваш ID: <span id="myId">?</span> — Собеседник: <span id="peerIdDisplay">—</span></h2>
 
-    <div id="controls">
-      <input id="peerIdInput" placeholder="ID собеседника" />
-      <button onclick="startCall()">Позвонить</button>
-      <button onclick="hangUp()">Завершить</button>
-      <button onclick="getLink()">Получить ссылку</button>
-    </div>
+  <div id="controls">
+    <input id="peerIdInput" placeholder="ID собеседника" />
+    <button onclick="startCall()">Позвонить</button>
+    <button onclick="hangUp()">Завершить</button>
+    <button onclick="getLink()">Получить ссылку</button>
+  </div>
 
-    <p id="statusMessage">Ожидание...</p>
+  <p id="statusMessage">Ожидание...</p>
 
-    <div id="videos">
-      <video id="localVideo" autoplay muted playsinline></video>
-      <video id="remoteVideo" autoplay playsinline></video>
-    </div>
+  <div id="videos">
+    <video id="localVideo" autoplay muted playsinline></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+  </div>
 
-    <script>
-      const socket = io();
-      let myId = null;
-      let currentPeerId = null;
-      let pc = null;
-      let localStream = null;
-      let remoteDescriptionSet = false;
-      let pendingCandidates = [];
+  <script>
+    const socket = io();
+    let myId = null;
+    let currentPeerId = null;
+    let pc = null;
+    let localStream = null;
+    let remoteDescriptionSet = false;
+    let pendingCandidates = [];
 
-      const localVideo = document.getElementById("localVideo");
-      const remoteVideo = document.getElementById("remoteVideo");
-      const peerIdInput = document.getElementById("peerIdInput");
-      const myIdEl = document.getElementById("myId");
-      const statusEl = document.getElementById("statusMessage");
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const peerIdInput = document.getElementById("peerIdInput");
+    const myIdEl = document.getElementById("myId");
+    const peerIdDisplay = document.getElementById("peerIdDisplay");
+    const statusEl = document.getElementById("statusMessage");
 
-      function setStatus(msg, err = false) {
-        statusEl.textContent = msg;
-        statusEl.style.color = err ? "red" : "#333";
+    function setStatus(msg, err=false) {
+      statusEl.textContent = msg;
+      statusEl.style.color = err ? "red" : "#333";
+    }
+
+    function setPeerDisplay(id) {
+      peerIdDisplay.textContent = id || "—";
+    }
+
+    async function getLocalStream() {
+      if (localStream) return localStream;
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        return localStream;
+      } catch (e) {
+        console.error(e);
+        setStatus("Ошибка доступа к камере/микрофону", true);
+        return null;
       }
+    }
 
-      async function getLocalStream() {
-        if (localStream) return localStream;
+    function createPeerConnection() {
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: "turn:217.154.5.134:3478",
+            username: "webrtc",
+            credential: "SuperSecurePass123"
+          }
+        ]
+      });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && currentPeerId)
+          socket.emit("message", { to: currentPeerId, type: "ice-candidate", candidate: event.candidate });
+      };
+
+      pc.ontrack = (e) => {
+        remoteVideo.srcObject = e.streams[0];
+        setStatus("Удалённый поток получен!");
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (["failed", "disconnected", "closed"].includes(pc.connectionState)) hangUp();
+      };
+    }
+
+    async function startCall() {
+      const target = peerIdInput.value.trim();
+      if (!target) return setStatus("Введите ID собеседника", true);
+      if (target === myId) return setStatus("Нельзя звонить самому себе", true);
+
+      const stream = await getLocalStream();
+      if (!stream) return;
+
+      createPeerConnection();
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      currentPeerId = target;
+      setPeerDisplay(currentPeerId);
+      remoteDescriptionSet = false;
+      pendingCandidates = [];
+
+      socket.emit("message", { to: target, type: "offer", sdp: offer });
+      setStatus("Отправлен offer, ожидаем ответ...");
+    }
+
+    async function handleOffer(msg) {
+      currentPeerId = msg.from;
+      setPeerDisplay(currentPeerId);
+
+      const stream = await getLocalStream();
+      if (!stream) return;
+
+      createPeerConnection();
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      remoteDescriptionSet = true;
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("message", { to: msg.from, type: "answer", sdp: answer });
+      setStatus("Ответ отправлен");
+
+      // Применяем отложенные ICE-кандидаты
+      for (const c of pendingCandidates) {
         try {
-          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          localVideo.srcObject = localStream;
-          return localStream;
+          await pc.addIceCandidate(c);
         } catch (e) {
-          setStatus("Ошибка доступа к камере/микрофону", true);
-          console.error(e);
-          return null;
+          console.warn("Ошибка добавления отложенного ICE-кандидата:", e);
         }
       }
+      pendingCandidates = [];
+    }
 
-      function createPeerConnection() {
-        pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            {
-              urls: "turn:217.154.5.134:3478",
-              username: "webrtc",
-              credential: "SuperSecurePass123",
-            },
-          ],
-        });
+    async function handleAnswer(msg) {
+      if (!pc) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      remoteDescriptionSet = true;
 
-        pc.onicecandidate = (event) => {
-          if (event.candidate && currentPeerId) {
-            socket.emit("message", { to: currentPeerId, type: "ice-candidate", candidate: event.candidate });
-          }
-        };
-
-        pc.ontrack = (e) => {
-          remoteVideo.srcObject = e.streams[0];
-          setStatus("Удалённый поток получен!");
-        };
-
-        pc.onconnectionstatechange = () => {
-          if (["failed", "disconnected", "closed"].includes(pc.connectionState)) hangUp();
-        };
+      // Применяем отложенные ICE-кандидаты
+      for (const c of pendingCandidates) {
+        try { await pc.addIceCandidate(c); } 
+        catch(e) { console.warn("Ошибка добавления отложенного ICE-кандидата:", e); }
       }
+      pendingCandidates = [];
+      setStatus("Соединение установлено!");
+    }
 
-      async function startCall() {
-        const target = peerIdInput.value.trim();
-        if (!target) return setStatus("Введите ID собеседника", true);
-        if (target === myId) return setStatus("Нельзя звонить самому себе", true);
-
-        const stream = await getLocalStream();
-        if (!stream) return;
-
-        createPeerConnection();
-        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-        remoteDescriptionSet = false;
-        pendingCandidates = [];
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        currentPeerId = target;
-        socket.emit("message", { to: target, type: "offer", sdp: offer });
-        setStatus("Отправлен offer, ожидаем ответ...");
-      }
-
-      async function handleOffer(msg) {
-        currentPeerId = msg.from;
-
-        const stream = await getLocalStream();
-        if (!stream) return;
-
-        createPeerConnection();
-        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-        remoteDescriptionSet = false;
-        pendingCandidates = [];
-
-        await setRemoteDescription(msg.sdp);
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit("message", { to: msg.from, type: "answer", sdp: answer });
-        setStatus("Ответ отправлен");
-      }
-
-      async function handleIceCandidate(candidate) {
-        if (pc && remoteDescriptionSet) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (e) {
-            console.warn("Ошибка добавления ICE-кандидата:", e);
-          }
-        } else {
-          pendingCandidates.push(candidate);
+    async function handleIceCandidate(msg) {
+      const candidate = new RTCIceCandidate(msg.candidate);
+      if (remoteDescriptionSet) {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch (e) {
+          console.warn("Ошибка добавления ICE-кандидата:", e);
         }
+      } else {
+        pendingCandidates.push(candidate);
       }
+    }
 
-      async function setRemoteDescription(sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        remoteDescriptionSet = true;
+    socket.on("message", async (msg) => {
+      if (msg.type === "offer") return handleOffer(msg);
+      if (msg.type === "answer") return handleAnswer(msg);
+      if (msg.type === "ice-candidate") return handleIceCandidate(msg);
+    });
 
-        for (const c of pendingCandidates) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(c)); }
-          catch(e){ console.warn("Ошибка добавления ICE:", e); }
-        }
-        pendingCandidates = [];
-      }
+    socket.on("yourId", (id) => {
+      myId = id;
+      myIdEl.textContent = myId;
+      setStatus(`Ваш ID: ${myId}`);
+      const join = new URLSearchParams(location.search).get("join");
+      if (join && join !== id) peerIdInput.value = join;
+    });
 
-      socket.on("message", async (msg) => {
-        if (msg.type === "offer") return handleOffer(msg);
-        if (msg.type === "answer") return setRemoteDescription(msg.sdp);
-        if (msg.type === "ice-candidate") return handleIceCandidate(msg.candidate);
-      });
+    function hangUp() {
+      if (pc) pc.close();
+      pc = null;
+      currentPeerId = null;
+      remoteDescriptionSet = false;
+      pendingCandidates = [];
+      setPeerDisplay(null);
+      remoteVideo.srcObject = null;
+      setStatus("Звонок завершён");
+    }
 
-      socket.on("yourId", (id) => {
-        myId = id;
-        myIdEl.textContent = id;
-        setStatus(`Ваш ID: ${id}`);
-        const join = new URLSearchParams(location.search).get("join");
-        if (join && join !== id) peerIdInput.value = join;
-      });
-
-      function hangUp() {
-        if (pc) pc.close();
-        pc = null;
-        currentPeerId = null;
-        remoteDescriptionSet = false;
-        pendingCandidates = [];
-        setStatus("Звонок завершён");
-      }
-
-      function getLink() {
-        if (!myId) return alert("ID ещё не получен!");
-        const url = new URL(location);
-        url.searchParams.set("join", myId);
-        navigator.clipboard.writeText(url.toString());
-        alert("Ссылка скопирована:\n" + url);
-      }
-    </script>
-  </body>
+    function getLink() {
+      if (!myId) return alert("ID ещё не получен!");
+      const url = new URL(location);
+      url.searchParams.set("join", myId);
+      navigator.clipboard.writeText(url.toString());
+      alert("Ссылка скопирована:\n" + url);
+    }
+  </script>
+</body>
 </html>
